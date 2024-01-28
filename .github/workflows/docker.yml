@@ -1,9 +1,10 @@
 name: Publish Docker Image
 on: 
-  workflow_dispatch:
-    branches: [ master ]
+  push:
     tags:
       - '**'
+  workflow_dispatch:
+  # pull_request:
 
 concurrency: 
   group: ${{ github.ref }}-${{ github.workflow }}
@@ -34,7 +35,7 @@ jobs:
 
       - name: Build and export
         id: build
-        if: github.ref == 'refs/heads/master'
+        if: github.ref == 'refs/heads/zsokami'
         uses: docker/build-push-action@v3
         with:
           platforms: linux/amd64
@@ -64,7 +65,7 @@ jobs:
           outputs: type=image,push=true
 
       - name: Save digest
-        if: github.ref == 'refs/heads/master'
+        if: github.ref == 'refs/heads/zsokami'
         run: echo ${{ steps.build.outputs.digest }} > /tmp/digest.txt
 
       - name: Save release digest
@@ -101,7 +102,7 @@ jobs:
 
       - name: Build and export
         id: build
-        if: github.ref == 'refs/heads/master'
+        if: github.ref == 'refs/heads/zsokami'
         uses: docker/build-push-action@v3
         with:
           platforms: linux/386
@@ -131,7 +132,7 @@ jobs:
           outputs: type=image,push=true
 
       - name: Save digest
-        if: github.ref == 'refs/heads/master'
+        if: github.ref == 'refs/heads/zsokami'
         run: echo ${{ steps.build.outputs.digest }} > /tmp/digest.txt
 
       - name: Save release digest
@@ -168,7 +169,7 @@ jobs:
 
       - name: Build and export
         id: build
-        if: github.ref == 'refs/heads/master'
+        if: github.ref == 'refs/heads/zsokami'
         uses: docker/build-push-action@v3
         with:
           platforms: linux/arm/v7
@@ -201,7 +202,7 @@ jobs:
           outputs: type=image,push=true
 
       - name: Save digest
-        if: github.ref == 'refs/heads/master'
+        if: github.ref == 'refs/heads/zsokami'
         run: echo ${{ steps.build.outputs.digest }} > /tmp/digest.txt
 
       - name: Save release digest
@@ -238,7 +239,7 @@ jobs:
 
       - name: Build and export
         id: build
-        if: github.ref == 'refs/heads/master'
+        if: github.ref == 'refs/heads/zsokami'
         uses: docker/build-push-action@v3
         with:
           platforms: linux/arm64
@@ -271,7 +272,7 @@ jobs:
           outputs: type=image,push=true
 
       - name: Save digest
-        if: github.ref == 'refs/heads/master'
+        if: github.ref == 'refs/heads/zsokami'
         run: echo ${{ steps.build.outputs.digest }} > /tmp/digest.txt
 
       - name: Save release digest
@@ -325,8 +326,8 @@ jobs:
             return context.payload.ref.replace(/\/?refs\/tags\/v/, '')
           result-encoding: string
 
-      - name: Merge and push manifest on master branch
-        if: github.ref == 'refs/heads/master'
+      - name: Merge and push manifest on zsokami branch
+        if: github.ref == 'refs/heads/zsokami'
         run: python scripts/merge_manifest.py
 
       - name: Merge and push manifest on release
