@@ -6,27 +6,27 @@
 #include <inja.hpp>
 #include <yaml-cpp/yaml.h>
 
-#include "config/binding.h"
-#include "generator/config/nodemanip.h"
-#include "generator/config/ruleconvert.h"
-#include "generator/config/subexport.h"
-#include "generator/template/templates.h"
-#include "script/cron.h"
-#include "script/script_quickjs.h"
-#include "server/webserver.h"
-#include "utils/base64/base64.h"
-#include "utils/file_extra.h"
-#include "utils/ini_reader/ini_reader.h"
-#include "utils/logger.h"
-#include "utils/network.h"
-#include "utils/regexp.h"
-#include "utils/stl_extra.h"
-#include "utils/string.h"
-#include "utils/string_hash.h"
-#include "utils/system.h"
-#include "utils/system.h"
-#include "utils/urlencode.h"
-#include "utils/yamlcpp_extra.h"
+#include "../config/binding.h"
+#include "../generator/config/nodemanip.h"
+#include "../generator/config/ruleconvert.h"
+#include "../generator/config/subexport.h"
+#include "../generator/template/templates.h"
+#include "../script/cron.h"
+#include "../script/script_quickjs.h"
+#include "../server/webserver.h"
+#include "../utils/base64/base64.h"
+#include "../utils/file_extra.h"
+#include "../utils/ini_reader/ini_reader.h"
+#include "../utils/logger.h"
+#include "../utils/network.h"
+#include "../utils/regexp.h"
+#include "../utils/stl_extra.h"
+#include "../utils/string.h"
+#include "../utils/string_hash.h"
+#include "../utils/system.h"
+#include "../utils/system.h"
+#include "../utils/urlencode.h"
+#include "../utils/yamlcpp_extra.h"
 #include "interfaces.h"
 #include "multithread.h"
 #include "settings.h"
@@ -36,6 +36,8 @@
 extern WebServer webServer;
 
 string_array gRegexBlacklist = {"(.*)*"};
+
+void refreshRulesets(RulesetConfigs &ruleset_list, std::vector<RulesetContent> &ruleset_content_array);
 
 std::string parseProxy(const std::string &source)
 {
@@ -87,28 +89,30 @@ const std::vector<UAProfile> UAMatchList = {
     {"V2RayX","","","v2ray"}
 };
 
-bool verGreaterEqual(const std::string& src_ver, const std::string& target_ver)
+bool verGreaterEqual(const std::string &src_ver, const std::string &target_ver)
 {
-    std::istringstream src_stream(src_ver), target_stream(target_ver);
-    int src_part, target_part;
-    char dot;
-    while (src_stream >> src_part) {
-        if (target_stream >> target_part) {
-            if (src_part < target_part) {
-                return false;
-            } else if (src_part > target_part) {
-                return true;
-            }
-            // Skip the dot separator in both streams
-            src_stream >> dot;
-            target_stream >> dot;
-        } else {
-            // If we run out of target parts, the source version is greater only if it has more parts
-            return true;
-        }
+    string_size src_pos_beg = 0, src_pos_end, target_pos_beg = 0, target_pos_end;
+    while(true)
+    {
+        src_pos_end = src_ver.find('.', src_pos_beg);
+        if(src_pos_end == src_ver.npos)
+            src_pos_end = src_ver.size();
+        int part_src = std::stoi(src_ver.substr(src_pos_beg, src_pos_end - src_pos_beg));
+        target_pos_end = target_ver.find('.', target_pos_beg);
+        if(target_pos_end == target_ver.npos)
+            target_pos_end = target_ver.size();
+        int part_target = std::stoi(target_ver.substr(target_pos_beg, target_pos_end - target_pos_beg));
+        if(part_src > part_target)
+            break;
+        else if(part_src < part_target)
+            return false;
+        else if(src_pos_end >= src_ver.size() - 1 || target_pos_end >= target_ver.size() - 1)
+            break;
+        src_pos_beg = src_pos_end + 1;
+        target_pos_beg = target_pos_end + 1;
     }
-    // If we get here, the common parts are equal, so check if target_ver has more parts
-    return !bool(target_stream >> target_part);
+    return true;
+
 }
 
 void matchUserAgent(const std::string &user_agent, std::string &target, tribool &clash_new_name, int &surge_ver)
@@ -134,18 +138,25 @@ void matchUserAgent(const std::string &user_agent, std::string &target, tribool 
             return;
         }
     }
+    return;
+}
+
+std::string getConvertedRuleset(RESPONSE_CALLBACK_ARGS)
+{
+    std::string url = urlDecode(getUrlArg(request.argument, "url")), type = getUrlArg(request.argument, "type");
+    return convertRuleset(fetchFile(url, parseProxy(global.proxyRuleset), global.cacheRuleset), to_int(type));
 }
 
 std::string getRuleset(RESPONSE_CALLBACK_ARGS)
 {
-    auto &argument = request.argument;
+    std::string &argument = request.argument;
     int *status_code = &response.status_code;
     /// type: 1 for Surge, 2 for Quantumult X, 3 for Clash domain rule-provider, 4 for Clash ipcidr rule-provider, 5 for Surge DOMAIN-SET, 6 for Clash classical ruleset
     std::string url = urlSafeBase64Decode(getUrlArg(argument, "url")), type = getUrlArg(argument, "type"), group = urlSafeBase64Decode(getUrlArg(argument, "group"));
     std::string output_content, dummy;
     int type_int = to_int(type, 0);
 
-    if(url.empty() || type.empty() || (type_int == 2 && group.empty()) || (type_int < 1 || type_int > 6))
+    if(!url.size() || !type.size() || (type_int == 2 && !group.size()) || (type_int < 1 || type_int > 6))
     {
         *status_code = 400;
         return "Invalid request!";
@@ -164,7 +175,7 @@ std::string getRuleset(RESPONSE_CALLBACK_ARGS)
         output_content += convertRuleset(content, x.rule_type);
     }
 
-    if(output_content.empty())
+    if(!output_content.size())
     {
         *status_code = 400;
         return "Invalid request!";
@@ -181,11 +192,11 @@ std::string getRuleset(RESPONSE_CALLBACK_ARGS)
     {
         posb = 0;
         pose = strLine.find(',');
-        if(pose == std::string::npos)
+        if(pose == strLine.npos)
             return 1;
         posb = pose + 1;
         pose = strLine.find(',', posb);
-        if(pose == std::string::npos)
+        if(pose == strLine.npos)
         {
             pose = strLine.size();
             if(strLine[pose - 1] == '\r')
@@ -212,11 +223,11 @@ std::string getRuleset(RESPONSE_CALLBACK_ARGS)
         switch(type_int)
         {
         case 2:
-            if(!std::any_of(QuanXRuleTypes.begin(), QuanXRuleTypes.end(), [&strLine](const std::string& type){return startsWith(strLine, type);}))
+            if(!std::any_of(QuanXRuleTypes.begin(), QuanXRuleTypes.end(), [&strLine](std::string type){return startsWith(strLine, type);}))
                 continue;
             break;
         case 1:
-            if(!std::any_of(SurgeRuleTypes.begin(), SurgeRuleTypes.end(), [&strLine](const std::string& type){return startsWith(strLine, type);}))
+            if(!std::any_of(SurgeRuleTypes.begin(), SurgeRuleTypes.end(), [&strLine](std::string type){return startsWith(strLine, type);}))
                 continue;
             break;
         case 3:
@@ -244,17 +255,13 @@ std::string getRuleset(RESPONSE_CALLBACK_ARGS)
                 continue;
             if(filterLine())
                 continue;
-            if(strLine[posb - 2] == 'X')
-                output_content += '.';
             output_content += strLine.substr(posb, pose);
             output_content += '\n';
             continue;
         case 6:
-            if(!std::any_of(ClashRuleTypes.begin(), ClashRuleTypes.end(), [&strLine](const std::string& type){return startsWith(strLine, type);}))
+            if(!std::any_of(ClashRuleTypes.begin(), ClashRuleTypes.end(), [&strLine](std::string type){return startsWith(strLine, type);}))
                 continue;
             output_content += "  - ";
-        default:
-            break;
         }
 
         lineSize = strLine.size();
@@ -304,12 +311,12 @@ void checkExternalBase(const std::string &path, std::string &dest)
 
 std::string subconverter(RESPONSE_CALLBACK_ARGS)
 {
-    auto &argument = request.argument;
+    std::string &argument = request.argument;
     int *status_code = &response.status_code;
 
     std::string argTarget = getUrlArg(argument, "target"), argSurgeVer = getUrlArg(argument, "ver");
     tribool argClashNewField = getUrlArg(argument, "new_name");
-    int intSurgeVer = !argSurgeVer.empty() ? to_int(argSurgeVer, 3) : 3;
+    int intSurgeVer = argSurgeVer.size() ? to_int(argSurgeVer, 3) : 3;
     if(argTarget == "auto")
         matchUserAgent(request.headers["User-Agent"], argTarget, argClashNewField, intSurgeVer);
 
@@ -320,27 +327,27 @@ std::string subconverter(RESPONSE_CALLBACK_ARGS)
     case "ss"_hash: case "ssd"_hash: case "ssr"_hash: case "sssub"_hash: case "v2ray"_hash: case "trojan"_hash: case "mixed"_hash:
         lSimpleSubscription = true;
         break;
-    case "clash"_hash: case "clashr"_hash: case "surge"_hash: case "quan"_hash: case "quanx"_hash: case "loon"_hash: case "surfboard"_hash: case "mellow"_hash: case "singbox"_hash:
+    case "clash"_hash: case "clashr"_hash: case "surge"_hash: case "quan"_hash: case "quanx"_hash: case "loon"_hash: case "surfboard"_hash: case "mellow"_hash:
         break;
     default:
         *status_code = 400;
         return "Invalid target!";
     }
     //check if we need to read configuration
-    if(global.reloadConfOnRequest && (!global.APIMode || global.CFWChildProcess) && !global.generatorMode)
+    if((!global.APIMode || global.CFWChildProcess) && !global.generatorMode)
         readConf();
 
     /// string values
-    std::string argUrl = getUrlArg(argument, "url");
-    std::string argGroupName = getUrlArg(argument, "group"), argUploadPath = getUrlArg(argument, "upload_path");
-    std::string argIncludeRemark = getUrlArg(argument, "include"), argExcludeRemark = getUrlArg(argument, "exclude");
-    std::string argCustomGroups = urlSafeBase64Decode(getUrlArg(argument, "groups")), argCustomRulesets = urlSafeBase64Decode(getUrlArg(argument, "ruleset")), argExternalConfig = getUrlArg(argument, "config");
-    std::string argDeviceID = getUrlArg(argument, "dev_id"), argFilename = getUrlArg(argument, "filename"), argUpdateInterval = getUrlArg(argument, "interval"), argUpdateStrict = getUrlArg(argument, "strict");
-    std::string argRenames = getUrlArg(argument, "rename"), argFilterScript = getUrlArg(argument, "filter_script");
+    std::string argUrl = urlDecode(getUrlArg(argument, "url"));
+    std::string argGroupName = urlDecode(getUrlArg(argument, "group")), argUploadPath = getUrlArg(argument, "upload_path");
+    std::string argIncludeRemark = urlDecode(getUrlArg(argument, "include")), argExcludeRemark = urlDecode(getUrlArg(argument, "exclude"));
+    std::string argCustomGroups = urlSafeBase64Decode(getUrlArg(argument, "groups")), argCustomRulesets = urlSafeBase64Decode(getUrlArg(argument, "ruleset")), argExternalConfig = urlDecode(getUrlArg(argument, "config"));
+    std::string argDeviceID = getUrlArg(argument, "dev_id"), argFilename = urlDecode(getUrlArg(argument, "filename")), argUpdateInterval = getUrlArg(argument, "interval"), argUpdateStrict = getUrlArg(argument, "strict");
+    std::string argRenames = urlDecode(getUrlArg(argument, "rename")), argFilterScript = urlDecode(getUrlArg(argument, "filter_script"));
 
     /// switches with default value
     tribool argUpload = getUrlArg(argument, "upload"), argEmoji = getUrlArg(argument, "emoji"), argAddEmoji = getUrlArg(argument, "add_emoji"), argRemoveEmoji = getUrlArg(argument, "remove_emoji");
-    tribool argAppendType = getUrlArg(argument, "append_type"), argTFO = getUrlArg(argument, "tfo"), argUDP = getUrlArg(argument, "udp"), argGenNodeList = getUrlArg(argument, "list");
+    tribool argAppendType = getUrlArg(argument, "append_type"), argTFO = getUrlArg(argument, "tfo"), argUDP = getUrlArg(argument, "udp"),argXUDP = getUrlArg(argument, "xudp"), argGenNodeList = getUrlArg(argument, "list");
     tribool argSort = getUrlArg(argument, "sort"), argUseSortScript = getUrlArg(argument, "sort_script");
     tribool argGenClashScript = getUrlArg(argument, "script"), argEnableInsert = getUrlArg(argument, "insert");
     tribool argSkipCertVerify = getUrlArg(argument, "scv"), argFilterDeprecated = getUrlArg(argument, "fdn"), argExpandRulesets = getUrlArg(argument, "expand"), argAppendUserinfo = getUrlArg(argument, "append_info");
@@ -353,8 +360,8 @@ std::string subconverter(RESPONSE_CALLBACK_ARGS)
     std::vector<RulesetContent> lRulesetContent;
     extra_settings ext;
     std::string subInfo, dummy;
-    int interval = !argUpdateInterval.empty() ? to_int(argUpdateInterval, global.updateInterval) : global.updateInterval;
-    bool authorized = !global.APIMode || getUrlArg(argument, "token") == global.accessToken, strict = !argUpdateStrict.empty() ? argUpdateStrict == "true" : global.updateStrict;
+    int interval = argUpdateInterval.size() ? to_int(argUpdateInterval, global.updateInterval) : global.updateInterval;
+    bool authorized = !global.APIMode || getUrlArg(argument, "token") == global.accessToken, strict = argUpdateStrict.size() ? argUpdateStrict == "true" : global.updateStrict;
 
     if(std::find(gRegexBlacklist.cbegin(), gRegexBlacklist.cend(), argIncludeRemark) != gRegexBlacklist.cend() || std::find(gRegexBlacklist.cbegin(), gRegexBlacklist.cend(), argExcludeRemark) != gRegexBlacklist.cend())
         return "Invalid request!";
@@ -362,39 +369,31 @@ std::string subconverter(RESPONSE_CALLBACK_ARGS)
     /// for external configuration
     std::string lClashBase = global.clashBase, lSurgeBase = global.surgeBase, lMellowBase = global.mellowBase, lSurfboardBase = global.surfboardBase;
     std::string lQuanBase = global.quanBase, lQuanXBase = global.quanXBase, lLoonBase = global.loonBase, lSSSubBase = global.SSSubBase;
-    std::string lSingBoxBase = global.singBoxBase;
 
     /// validate urls
     argEnableInsert.define(global.enableInsert);
-    if(argUrl.empty() && (!global.APIMode || authorized))
+    if(!argUrl.size() && (!global.APIMode || authorized))
         argUrl = global.defaultUrls;
-    if((argUrl.empty() && !(!global.insertUrls.empty() && argEnableInsert)) || argTarget.empty())
+    if((!argUrl.size() && !(global.insertUrls.size() && argEnableInsert)) || !argTarget.size())
     {
         *status_code = 400;
         return "Invalid request!";
     }
 
     /// load request arguments as template variables
-//    string_array req_args = split(argument, "&");
-//    string_map req_arg_map;
-//    for(std::string &x : req_args)
-//    {
-//        string_size pos = x.find("=");
-//        if(pos == x.npos)
-//        {
-//            req_arg_map[x] = "";
-//            continue;
-//        }
-//        if(x.substr(0, pos) == "token")
-//            continue;
-//        req_arg_map[x.substr(0, pos)] = x.substr(pos + 1);
-//    }
+    string_array req_args = split(argument, "&");
     string_map req_arg_map;
-    for (auto &x : argument)
+    for(std::string &x : req_args)
     {
-        if(x.first == "token")
+        string_size pos = x.find("=");
+        if(pos == x.npos)
+        {
+            req_arg_map[x] = "";
             continue;
-        req_arg_map[x.first] = x.second;
+        }
+        if(x.substr(0, pos) == "token")
+            continue;
+        req_arg_map[x.substr(0, pos)] = x.substr(pos + 1);
     }
     req_arg_map["target"] = argTarget;
     req_arg_map["ver"] = std::to_string(intSurgeVer);
@@ -418,11 +417,12 @@ std::string subconverter(RESPONSE_CALLBACK_ARGS)
     /// read preference from argument, assign global var if not in argument
     ext.tfo.define(argTFO).define(global.TFOFlag);
     ext.udp.define(argUDP).define(global.UDPFlag);
+    ext.xudp.define(argXUDP).define(global.XUDPFlag);
     ext.skip_cert_verify.define(argSkipCertVerify).define(global.skipCertVerify);
     ext.tls13.define(argTLS13).define(global.TLS13Flag);
 
     ext.sort_flag = argSort.get(global.enableSort);
-    argUseSortScript.define(!global.sortScript.empty());
+    argUseSortScript.define(global.sortScript.size() != 0);
     if(ext.sort_flag && argUseSortScript)
         ext.sort_script = global.sortScript;
     ext.filter_deprecated = argFilterDeprecated.get(global.filterDeprecated);
@@ -436,7 +436,7 @@ std::string subconverter(RESPONSE_CALLBACK_ARGS)
 
     ext.nodelist = argGenNodeList;
     ext.surge_ssr_path = global.surgeSSRPath;
-    ext.quanx_dev_id = !argDeviceID.empty() ? argDeviceID : global.quanXDevID;
+    ext.quanx_dev_id = argDeviceID.size() ? argDeviceID : global.quanXDevID;
     ext.enable_rule_generator = global.enableRuleGen;
     ext.overwrite_original_rules = global.overwriteOriginalRules;
     if(!argExpandRulesets)
@@ -445,7 +445,7 @@ std::string subconverter(RESPONSE_CALLBACK_ARGS)
     /// load external configuration
     if(argExternalConfig.empty())
         argExternalConfig = global.defaultExtConfig;
-    if(!argExternalConfig.empty())
+    if(argExternalConfig.size())
     {
         //std::cerr<<"External configuration file provided. Loading...\n";
         writeLog(0, "External configuration file provided. Loading...", LOG_LEVEL_INFO);
@@ -465,23 +465,22 @@ std::string subconverter(RESPONSE_CALLBACK_ARGS)
                     checkExternalBase(extconf.quan_rule_base, lQuanBase);
                     checkExternalBase(extconf.quanx_rule_base, lQuanXBase);
                     checkExternalBase(extconf.loon_rule_base, lLoonBase);
-                    checkExternalBase(extconf.singbox_rule_base, lSingBoxBase);
 
-                    if(!extconf.surge_ruleset.empty())
+                    if(extconf.surge_ruleset.size())
                         lCustomRulesets = extconf.surge_ruleset;
-                    if(!extconf.custom_proxy_group.empty())
+                    if(extconf.custom_proxy_group.size())
                         lCustomProxyGroups = extconf.custom_proxy_group;
                     ext.enable_rule_generator = extconf.enable_rule_generator;
                     ext.overwrite_original_rules = extconf.overwrite_original_rules;
                 }
             }
-            if(!extconf.rename.empty())
+            if(extconf.rename.size())
                 ext.rename_array = extconf.rename;
-            if(!extconf.emoji.empty())
+            if(extconf.emoji.size())
                 ext.emoji_array = extconf.emoji;
-            if(!extconf.include.empty())
+            if(extconf.include.size())
                 lIncludeRemarks = extconf.include;
-            if(!extconf.exclude.empty())
+            if(extconf.exclude.size())
                 lExcludeRemarks = extconf.exclude;
             argAddEmoji.define(extconf.add_emoji);
             argRemoveEmoji.define(extconf.remove_old_emoji);
@@ -492,14 +491,14 @@ std::string subconverter(RESPONSE_CALLBACK_ARGS)
         if(!lSimpleSubscription)
         {
             /// loading custom groups
-            if(!argCustomGroups.empty() && !ext.nodelist)
+            if(argCustomGroups.size() && !ext.nodelist)
             {
                 string_array vArray = split(argCustomGroups, "@");
                 lCustomProxyGroups = INIBinding::from<ProxyGroupConfig>::from_ini(vArray);
             }
 
             /// loading custom rulesets
-            if(!argCustomRulesets.empty() && !ext.nodelist)
+            if(argCustomRulesets.size() && !ext.nodelist)
             {
                 string_array vArray = split(argCustomRulesets, "@");
                 lCustomRulesets = INIBinding::from<RulesetConfig>::from_ini(vArray);
@@ -527,15 +526,15 @@ std::string subconverter(RESPONSE_CALLBACK_ARGS)
     ext.remove_emoji = argRemoveEmoji.get(global.removeEmoji);
     if(ext.add_emoji && ext.emoji_array.empty())
         ext.emoji_array = safe_get_emojis();
-    if(!argRenames.empty())
+    if(argRenames.size())
         ext.rename_array = INIBinding::from<RegexMatchConfig>::from_ini(split(argRenames, "`"), "@");
     else if(ext.rename_array.empty())
         ext.rename_array = safe_get_renames();
 
     /// check custom include/exclude settings
-    if(!argIncludeRemark.empty() && regValid(argIncludeRemark))
+    if(argIncludeRemark.size() && regValid(argIncludeRemark))
         lIncludeRemarks = string_array{argIncludeRemark};
-    if(!argExcludeRemark.empty() && regValid(argExcludeRemark))
+    if(argExcludeRemark.size() && regValid(argExcludeRemark))
         lExcludeRemarks = string_array{argExcludeRemark};
 
     /// initialize script runtime
@@ -567,7 +566,7 @@ std::string subconverter(RESPONSE_CALLBACK_ARGS)
     parse_set.js_runtime = ext.js_runtime;
     parse_set.js_context = ext.js_context;
 
-    if(!global.insertUrls.empty() && argEnableInsert)
+    if(global.insertUrls.size() && argEnableInsert)
     {
         groupID = -1;
         urls = split(global.insertUrls, "|");
@@ -610,12 +609,12 @@ std::string subconverter(RESPONSE_CALLBACK_ARGS)
         groupID++;
     }
     //exit if found nothing
-    if(nodes.empty() && insert_nodes.empty())
+    if(!nodes.size() && !insert_nodes.size())
     {
         *status_code = 400;
         return "No nodes were found!";
     }
-    if(!subInfo.empty() && argAppendUserinfo.get(global.appendUserinfo))
+    if(subInfo.size() && argAppendUserinfo.get(global.appendUserinfo))
         response.headers.emplace("Subscription-UserInfo", subInfo);
 
     if(request.method == "HEAD")
@@ -635,7 +634,7 @@ std::string subconverter(RESPONSE_CALLBACK_ARGS)
     std::string filterScript = global.filterScript;
     if(authorized && !argFilterScript.empty())
         filterScript = argFilterScript;
-    if(!filterScript.empty())
+    if(filterScript.size())
     {
         if(startsWith(filterScript, "path:"))
             filterScript = fileGet(filterScript.substr(5), false);
@@ -678,7 +677,7 @@ std::string subconverter(RESPONSE_CALLBACK_ARGS)
     }
 
     //check custom group name
-    if(!argGroupName.empty())
+    if(argGroupName.size())
         for(Proxy &x : nodes)
             x.Group = argGroupName;
 
@@ -701,9 +700,9 @@ std::string subconverter(RESPONSE_CALLBACK_ARGS)
 
     ProxyGroupConfigs dummy_group;
     std::vector<RulesetContent> dummy_ruleset;
-    std::string managed_url = base64Decode(getUrlArg(argument, "profile_data"));
+    std::string managed_url = base64Decode(urlDecode(getUrlArg(argument, "profile_data")));
     if(managed_url.empty())
-        managed_url = global.managedConfigPrefix + "/sub?" + joinArguments(argument);
+        managed_url = global.managedConfigPrefix + "/sub?" + argument;
 
     //std::cerr<<"Generate target: ";
     proxy = parseProxy(global.proxyConfig);
@@ -755,7 +754,7 @@ std::string subconverter(RESPONSE_CALLBACK_ARGS)
             if(argUpload)
                 uploadGist("surge" + argSurgeVer, argUploadPath, output_content, true);
 
-            if(global.writeManagedConfig && !global.managedConfigPrefix.empty())
+            if(global.writeManagedConfig && global.managedConfigPrefix.size())
                 output_content = "#!MANAGED-CONFIG " + managed_url + (interval ? " interval=" + std::to_string(interval) : "") \
                  + " strict=" + std::string(strict ? "true" : "false") + "\n\n" + output_content;
         }
@@ -772,7 +771,7 @@ std::string subconverter(RESPONSE_CALLBACK_ARGS)
         if(argUpload)
             uploadGist("surfboard", argUploadPath, output_content, true);
 
-        if(global.writeManagedConfig && !global.managedConfigPrefix.empty())
+        if(global.writeManagedConfig && global.managedConfigPrefix.size())
             output_content = "#!MANAGED-CONFIG " + managed_url + (interval ? " interval=" + std::to_string(interval) : "") \
                  + " strict=" + std::string(strict ? "true" : "false") + "\n\n" + output_content;
         break;
@@ -885,40 +884,24 @@ std::string subconverter(RESPONSE_CALLBACK_ARGS)
         if(argUpload)
             uploadGist("ssd", argUploadPath, output_content, false);
         break;
-    case "singbox"_hash:
-        writeLog(0, "Generate target: sing-box", LOG_LEVEL_INFO);
-        if(!ext.nodelist)
-        {
-            if(render_template(fetchFile(lSingBoxBase, proxy, global.cacheConfig), tpl_args, base_content, global.templatePath) != 0)
-            {
-                *status_code = 400;
-                return base_content;
-            }
-        }
-
-        output_content = proxyToSingBox(nodes, base_content, lRulesetContent, lCustomProxyGroups, ext);
-
-        if(argUpload)
-            uploadGist("singbox", argUploadPath, output_content, false);
-        break;
     default:
         writeLog(0, "Generate target: Unspecified", LOG_LEVEL_INFO);
         *status_code = 500;
         return "Unrecognized target";
     }
     writeLog(0, "Generate completed.", LOG_LEVEL_INFO);
-    if(!argFilename.empty())
+    if(argFilename.size())
         response.headers.emplace("Content-Disposition", "attachment; filename=\"" + argFilename + "\"; filename*=utf-8''" + urlEncode(argFilename));
     return output_content;
 }
 
 std::string simpleToClashR(RESPONSE_CALLBACK_ARGS)
 {
-    auto argument = joinArguments(request.argument);
+    std::string &argument = request.argument;
     int *status_code = &response.status_code;
 
     std::string url = argument.size() <= 8 ? "" : argument.substr(8);
-    if(url.empty() || argument.substr(0, 8) != "sublink=")
+    if(!url.size() || argument.substr(0, 8) != "sublink=")
     {
         *status_code = 400;
         return "Invalid request!";
@@ -928,14 +911,13 @@ std::string simpleToClashR(RESPONSE_CALLBACK_ARGS)
         *status_code = 400;
         return "Please insert your subscription link instead of clicking the default link.";
     }
-    request.argument.emplace("target", "clashr");
-    request.argument.emplace("url", urlEncode(url));
+    request.argument = "target=clashr&url=" + urlEncode(url);
     return subconverter(request, response);
 }
 
 std::string surgeConfToClash(RESPONSE_CALLBACK_ARGS)
 {
-    auto argument = joinArguments(request.argument);
+    std::string &argument = request.argument;
     int *status_code = &response.status_code;
 
     INIReader ini;
@@ -946,9 +928,9 @@ std::string surgeConfToClash(RESPONSE_CALLBACK_ARGS)
 
     ini.store_any_line = true;
 
-    if(url.empty())
+    if(!url.size())
         url = global.defaultUrls;
-    if(url.empty() || argument.substr(0, 5) != "link=")
+    if(!url.size() || argument.substr(0, 5) != "link=")
     {
         *status_code = 400;
         return "Invalid request!";
@@ -1007,7 +989,7 @@ std::string surgeConfToClash(RESPONSE_CALLBACK_ARGS)
         name = x.first;
         content = x.second;
         dummy_str_array = split(content, ",");
-        if(dummy_str_array.empty())
+        if(!dummy_str_array.size())
             continue;
         type = dummy_str_array[0];
         if(!(type == "select" || type == "url-test" || type == "fallback" || type == "load-balance")) //remove unsupported types
@@ -1017,11 +999,11 @@ std::string surgeConfToClash(RESPONSE_CALLBACK_ARGS)
         for(unsigned int i = 1; i < dummy_str_array.size(); i++)
         {
             if(startsWith(dummy_str_array[i], "url"))
-                singlegroup["url"] = trim(dummy_str_array[i].substr(dummy_str_array[i].find('=') + 1));
+                singlegroup["url"] = trim(dummy_str_array[i].substr(dummy_str_array[i].find("=") + 1));
             else if(startsWith(dummy_str_array[i], "interval"))
-                singlegroup["interval"] = trim(dummy_str_array[i].substr(dummy_str_array[i].find('=') + 1));
+                singlegroup["interval"] = trim(dummy_str_array[i].substr(dummy_str_array[i].find("=") + 1));
             else if(startsWith(dummy_str_array[i], "policy-path"))
-                links.emplace_back(trim(dummy_str_array[i].substr(dummy_str_array[i].find('=') + 1)));
+                links.emplace_back(trim(dummy_str_array[i].substr(dummy_str_array[i].find("=") + 1)));
             else
                 singlegroup["proxies"].push_back(trim(dummy_str_array[i]));
         }
@@ -1057,7 +1039,7 @@ std::string surgeConfToClash(RESPONSE_CALLBACK_ARGS)
     }
 
     //exit if found nothing
-    if(nodes.empty())
+    if(!nodes.size())
     {
         *status_code = 400;
         return "No nodes were found!";
@@ -1084,7 +1066,7 @@ std::string surgeConfToClash(RESPONSE_CALLBACK_ARGS)
         name = x.first;
         content = x.second;
         dummy_str_array = split(content, ",");
-        if(dummy_str_array.empty())
+        if(!dummy_str_array.size())
             continue;
         content = trim(dummy_str_array[0]);
         switch(hash_(content))
@@ -1121,7 +1103,7 @@ std::string surgeConfToClash(RESPONSE_CALLBACK_ARGS)
             if(strArray.size() != 3)
                 continue;
             content = webGet(strArray[1], proxy, global.cacheRuleset);
-            if(content.empty())
+            if(!content.size())
                 continue;
 
             ss << content;
@@ -1134,7 +1116,7 @@ std::string surgeConfToClash(RESPONSE_CALLBACK_ARGS)
                     strLine.erase(--lineSize);
                 if(!lineSize || strLine[0] == ';' || strLine[0] == '#' || (lineSize >= 2 && strLine[0] == '/' && strLine[1] == '/')) //empty lines and comments are ignored
                     continue;
-                else if(!std::any_of(ClashRuleTypes.begin(), ClashRuleTypes.end(), [&strLine](const std::string& type){return startsWith(strLine, type);})) //remove unsupported types
+                else if(!std::any_of(ClashRuleTypes.begin(), ClashRuleTypes.end(), [&strLine](std::string type){return startsWith(strLine, type);})) //remove unsupported types
                     continue;
                 strLine += strArray[2];
                 if(count_least(strLine, ',', 3))
@@ -1144,7 +1126,7 @@ std::string surgeConfToClash(RESPONSE_CALLBACK_ARGS)
             ss.clear();
             continue;
         }
-        else if(!std::any_of(ClashRuleTypes.begin(), ClashRuleTypes.end(), [&strLine](const std::string& type){return startsWith(strLine, type);}))
+        else if(!std::any_of(ClashRuleTypes.begin(), ClashRuleTypes.end(), [&strLine](std::string type){return startsWith(strLine, type);}))
             continue;
         rule.push_back(x);
     }
@@ -1157,24 +1139,23 @@ std::string surgeConfToClash(RESPONSE_CALLBACK_ARGS)
 
 std::string getProfile(RESPONSE_CALLBACK_ARGS)
 {
-    auto &argument = request.argument;
+    std::string &argument = request.argument;
     int *status_code = &response.status_code;
 
-    std::string name = getUrlArg(argument, "name"), token = getUrlArg(argument, "token");
+    std::string name = urlDecode(getUrlArg(argument, "name")), token = urlDecode(getUrlArg(argument, "token"));
     string_array profiles = split(name, "|");
-    if(token.empty() || profiles.empty())
+    name = profiles[0];
+    if(token.empty() || name.empty())
     {
         *status_code = 403;
         return "Forbidden";
     }
     std::string profile_content;
-    name = profiles[0];
     /*if(vfs::vfs_exist(name))
     {
         profile_content = vfs::vfs_get(name);
     }
-    else */
-    if(fileExist(name))
+    else */if(fileExist(name))
     {
         profile_content = fileGet(name, true);
     }
@@ -1197,7 +1178,7 @@ std::string getProfile(RESPONSE_CALLBACK_ARGS)
     writeLog(0, "Trying to parse profile '" + name + "'.", LOG_LEVEL_INFO);
     string_multimap contents;
     ini.get_items("Profile", contents);
-    if(contents.empty())
+    if(!contents.size())
     {
         //std::cerr<<"Load profile failed! Reason: Empty Profile section\n";
         writeLog(0, "Load profile failed! Reason: Empty Profile section", LOG_LEVEL_ERROR);
@@ -1244,7 +1225,7 @@ std::string getProfile(RESPONSE_CALLBACK_ARGS)
                 continue;
             }
             url = ini.get("Profile", "url");
-            if(!url.empty())
+            if(url.size())
             {
                 all_urls += "|" + url;
                 writeLog(0, "Profile url from '" + name + "' added.", LOG_LEVEL_INFO);
@@ -1258,9 +1239,10 @@ std::string getProfile(RESPONSE_CALLBACK_ARGS)
     }
 
     contents.emplace("token", token);
-    contents.emplace("profile_data", base64Encode(global.managedConfigPrefix + "/getprofile?" + joinArguments(argument)));
-    std::copy(argument.cbegin(), argument.cend(), std::inserter(contents, contents.end()));
-    request.argument = contents;
+    contents.emplace("profile_data", base64Encode(global.managedConfigPrefix + "/getprofile?" + argument));
+    std::string query = std::accumulate(contents.begin(), contents.end(), std::string(), [](const std::string &x, auto y){ return x + y.first + "=" + urlEncode(y.second) + "&"; });
+    query += argument;
+    request.argument = query;
     return subconverter(request, response);
 }
 
@@ -1285,7 +1267,7 @@ inline std::string intToStream(unsigned long long stream)
         streamval /= 1024.0;
     }
     snprintf(chrs, 15, "%.2f %cB", streamval, units[level]);
-    return {chrs};
+    return std::string(chrs);
 }
 
 std::string subInfoToMessage(std::string subinfo)
@@ -1295,7 +1277,7 @@ std::string subInfoToMessage(std::string subinfo)
     std::string retdata, useddata = "N/A", totaldata = "N/A", expirydata = "N/A";
     std::string upload = getUrlArg(subinfo, "upload"), download = getUrlArg(subinfo, "download"), total = getUrlArg(subinfo, "total"), expire = getUrlArg(subinfo, "expire");
     ull used = to_number<ull>(upload, 0) + to_number<ull>(download, 0), tot = to_number<ull>(total, 0);
-    auto expiry = to_number<time_t>(expire, 0);
+    time_t expiry = to_number<time_t>(expire, 0);
     if(used != 0)
         useddata = intToStream(used);
     if(tot != 0)
@@ -1318,7 +1300,7 @@ int simpleGenerator()
 {
     //std::cerr<<"\nReading generator configuration...\n";
     writeLog(0, "Reading generator configuration...", LOG_LEVEL_INFO);
-    std::string config = fileGet("generate.ini"), path, profile, content;
+    std::string config = fileGet("generate.ini"), path, profile, arguments, content;
     if(config.empty())
     {
         //std::cerr<<"Generator configuration not found or empty!\n";
@@ -1337,7 +1319,7 @@ int simpleGenerator()
     writeLog(0, "Read generator configuration completed.\n", LOG_LEVEL_INFO);
 
     string_array sections = ini.get_section_names();
-    if(!global.generateProfiles.empty())
+    if(global.generateProfiles.size())
     {
         //std::cerr<<"Generating with specific artifacts: \""<<gen_profile<<"\"...\n";
         writeLog(0, "Generating with specific artifacts: \"" + global.generateProfiles + "\"...", LOG_LEVEL_INFO);
@@ -1367,6 +1349,7 @@ int simpleGenerator()
     Response response;
     for(std::string &x : sections)
     {
+        arguments.clear();
         response.status_code = 200;
         //std::cerr<<"Generating artifact '"<<x<<"'...\n";
         writeLog(0, "Generating artifact '" + x + "'...", LOG_LEVEL_INFO);
@@ -1382,14 +1365,12 @@ int simpleGenerator()
         if(ini.item_exist("profile"))
         {
             profile = ini.get("profile");
-            request.argument.emplace("name", urlEncode(profile));
-            request.argument.emplace("token", global.accessToken);
-            request.argument.emplace("expand", "true");
+            request.argument = "name=" + urlEncode(profile) + "&token=" + global.accessToken + "&expand=true";
             content = getProfile(request, response);
         }
         else
         {
-            if(ini.get_bool("direct"))
+            if(ini.get_bool("direct") == true)
             {
                 std::string url = ini.get("url");
                 content = fetchFile(url, proxy, global.cacheSubscription);
@@ -1410,8 +1391,10 @@ int simpleGenerator()
             {
                 if(y.first == "path")
                     continue;
-                request.argument.emplace(y.first, y.second);
+                arguments += y.first + "=" + urlEncode(y.second) + "&";
             }
+            arguments.erase(arguments.size() - 1);
+            request.argument = arguments;
             content = subconverter(request, response);
         }
         if(response.status_code != 200)
@@ -1437,10 +1420,10 @@ int simpleGenerator()
 
 std::string renderTemplate(RESPONSE_CALLBACK_ARGS)
 {
-    auto &argument = request.argument;
+    std::string &argument = request.argument;
     int *status_code = &response.status_code;
 
-    std::string path = getUrlArg(argument, "path");
+    std::string path = urlDecode(getUrlArg(argument, "path"));
     writeLog(0, "Trying to render template '" + path + "'...", LOG_LEVEL_INFO);
 
     if(!startsWith(path, global.templatePath) || !fileExist(path))
@@ -1458,10 +1441,16 @@ std::string renderTemplate(RESPONSE_CALLBACK_ARGS)
     tpl_args.global_vars = global.templateVars;
 
     //load request arguments as template variables
+    string_array req_args = split(argument, "&");
+    string_size pos;
     string_map req_arg_map;
-    for (auto &x : argument)
+    for(std::string &x : req_args)
     {
-        req_arg_map[x.first] = x.second;
+        pos = x.find("=");
+        if(pos == x.npos)
+            req_arg_map[x] = "";
+        else
+            req_arg_map[x.substr(0, pos)] = x.substr(pos + 1);
     }
     tpl_args.request_params = req_arg_map;
 
