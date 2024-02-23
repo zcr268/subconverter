@@ -616,6 +616,8 @@ proxyToClash(std::vector<Proxy> &nodes, YAML::Node &yamlnode, const ProxyGroupCo
         switch (x.Type) {
             case ProxyGroupType::Select:
             case ProxyGroupType::Relay:
+                //add url
+                singlegroup["url"] = x.Url;
                 break;
             case ProxyGroupType::LoadBalance:
                 singlegroup["strategy"] = x.StrategyStr();

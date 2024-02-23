@@ -24,6 +24,8 @@ namespace toml
             {
             case "select"_hash:
                 conf.Type = ProxyGroupType::Select;
+                //add url
+                conf.Url = toml::find_or<String>(v, "url", "https://www.gstatic.com/generate_204");
                 break;
             case "url-test"_hash:
                 conf.Type = ProxyGroupType::URLTest;
@@ -47,6 +49,10 @@ namespace toml
                 case "round-robin"_hash:
                     conf.Strategy = BalanceStrategy::RoundRobin;
                     break;
+                //add sticky-sessions
+                case "sticky-sessions"_hash:
+                    conf.Strategy = BalanceStrategy::StickySessions;
+                    break;
                 }
                 if(v.contains("persistent"))
                     conf.Persistent = toml::find_or(v, "persistent", conf.Persistent.get());
@@ -60,6 +66,8 @@ namespace toml
                 break;
             case "relay"_hash:
                 conf.Type = ProxyGroupType::Relay;
+                //add url
+                conf.Url = toml::find_or<String>(v, "url", "https://www.gstatic.com/generate_204");
                 break;
             case "ssid"_hash:
                 conf.Type = ProxyGroupType::SSID;

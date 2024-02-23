@@ -16,7 +16,9 @@ enum ProxyGroupType
 enum BalanceStrategy
 {
     ConsistentHashing,
-    RoundRobin
+    RoundRobin,
+    //add sticky-sessions
+    StickySessions
 };
 
 struct ProxyGroupConfig
@@ -55,6 +57,8 @@ struct ProxyGroupConfig
         {
             case BalanceStrategy::ConsistentHashing: return "consistent-hashing";
             case BalanceStrategy::RoundRobin: return "round-robin";
+            //add sticky-sessions
+            case BalanceStrategy::StickySessions: return "sticky-sessions";
         }
         return "";
     }
