@@ -1098,6 +1098,29 @@ std::string proxyToSingle(std::vector<Proxy> &nodes, int types, extra_settings &
                 }
                 proxyStr += "#" + urlEncode(remark);
                 break;
+            case ProxyType::VLESS:
+                proxyStr = "vless://" + x.UserId + "@" + hostname + ":" + port + "?encryption=" + x.EncryptMethod + "&flow=" + x.Flow;
+                
+                if (!x.PublicKey.empty()) {
+                    proxyStr += "&security=reality&pbk=" + x.PublicKey;
+                } else {
+                    proxyStr += "&security=" + tlssecure ? "tls" : "";
+                }
+                proxyStr += "&sni=" + x.ServerName + "&fp=" + x.Fingerprint + "&sid=" + x.ShortId;
+
+                switch (hash_(x.TransferProtocol)) {
+                    case "quic"_hash:
+                        proxyStr += "&type=quic&headerType=" + x.FakeType + "&quicSecurity=" + x.QUICSecure + "&key=" + x.QUICSecret;
+                        break;
+                    case "grpc"_hash:
+                        proxyStr += "&type=grpc&serviceName=" + x.GRPCServiceName + "&mode=" + x.GRPCMode;
+                        break;
+                    default:
+                        proxyStr += "&type=" + x.TransferProtocol + "&host=" + x.Host + "&path=" + x.Path;
+                        continue;
+                }
+                proxyStr += "#" + remark;
+                break;
             default:
                 continue;
         }
