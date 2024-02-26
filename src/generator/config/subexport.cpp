@@ -1099,16 +1099,37 @@ std::string proxyToSingle(std::vector<Proxy> &nodes, int types, extra_settings &
                 proxyStr += "#" + urlEncode(remark);
                 break;
             case ProxyType::VLESS:
-                proxyStr = "vless://" + x.UserId + "@" + hostname + ":" + port + "?encryption=" + x.EncryptMethod + "&flow=" + x.Flow;
-                
+                proxyStr = "vless://" + x.UserId + "@" + hostname + ":" + port + "?encryption=none";
+                if (!x.Flow.empty()) {
+                    proxyStr += "&flow=" + x.Flow;
+                }
                 if (!x.PublicKey.empty()) {
                     proxyStr += "&security=reality&pbk=" + x.PublicKey;
                 } else {
-                    proxyStr += "&security=" + tlssecure ? "tls" : "";
+                    proxyStr += "&security=" + std::string(tlssecure ? "tls" : "");
                 }
-                proxyStr += "&sni=" + x.ServerName + "&fp=" + x.Fingerprint + "&sid=" + x.ShortId;
-
+                if (!x.ServerName.empty()) {
+                    proxyStr += "&sni=" + x.ServerName;
+                }
+                if (!x.Fingerprint.empty()) {
+                    proxyStr += "&fp=" + x.Fingerprint;
+                }
+                if (!x.ShortId.empty()) {
+                    proxyStr += "&sid=" + x.ShortId;
+                }
                 switch (hash_(x.TransferProtocol)) {
+                    case "tcp"_hash:
+                        proxyStr += "&type=tcp&headerType=" + x.FakeType + "&host=" + x.Host;
+                        break;
+                    case "kcp"_hash:
+                        proxyStr += "&type=kcp&headerType" + x.FakeType + "&seed=" + x.Path;
+                        break;
+                    case "ws"_hash:
+                        proxyStr += "&type=ws&host=" + x.Host + "&path=" + x.Path;
+                        break;
+                    case "h2"_hash:
+                        proxyStr += "&type=h2&host=" + x.Host + "&path=" + x.Path;
+                        break;
                     case "quic"_hash:
                         proxyStr += "&type=quic&headerType=" + x.FakeType + "&quicSecurity=" + x.QUICSecure + "&key=" + x.QUICSecret;
                         break;
@@ -1116,10 +1137,9 @@ std::string proxyToSingle(std::vector<Proxy> &nodes, int types, extra_settings &
                         proxyStr += "&type=grpc&serviceName=" + x.GRPCServiceName + "&mode=" + x.GRPCMode;
                         break;
                     default:
-                        proxyStr += "&type=" + x.TransferProtocol + "&host=" + x.Host + "&path=" + x.Path;
                         continue;
                 }
-                proxyStr += "#" + remark;
+                proxyStr += "#" + urlEncode(remark);
                 break;
             default:
                 continue;
