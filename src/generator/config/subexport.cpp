@@ -2346,14 +2346,14 @@ proxyToSingBox(std::vector<Proxy> &nodes, rapidjson::Document &json, std::vector
             case ProxyType::WireGuard: {
                 proxy.AddMember("type", "wireguard", allocator);
                 proxy.AddMember("tag", rapidjson::StringRef(x.Remark.c_str()), allocator);
-                proxy.AddMember("inet4_bind_address", rapidjson::StringRef(x.SelfIP.c_str()), allocator);
+//                proxy.AddMember("inet4_bind_address", rapidjson::StringRef(x.SelfIP.c_str()), allocator);
                 rapidjson::Value addresses(rapidjson::kArrayType);
                 addresses.PushBack(rapidjson::StringRef(x.SelfIP.append("/32").c_str()), allocator);
 //                if (!x.SelfIPv6.empty())
 //                    addresses.PushBack(rapidjson::StringRef(x.SelfIPv6.c_str()), allocator);
                 proxy.AddMember("local_address", addresses, allocator);
-                if (!x.SelfIPv6.empty())
-                    proxy.AddMember("inet6_bind_address", rapidjson::StringRef(x.SelfIPv6.c_str()), allocator);
+//                if (!x.SelfIPv6.empty())
+//                    proxy.AddMember("inet6_bind_address", rapidjson::StringRef(x.SelfIPv6.c_str()), allocator);
                 proxy.AddMember("private_key", rapidjson::StringRef(x.PrivateKey.c_str()), allocator);
                 rapidjson::Value peer(rapidjson::kObjectType);
                 peer.AddMember("server", rapidjson::StringRef(x.Hostname.c_str()), allocator);
