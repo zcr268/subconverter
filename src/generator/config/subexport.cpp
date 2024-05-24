@@ -457,6 +457,8 @@ proxyToClash(std::vector<Proxy> &nodes, YAML::Node &yamlnode, const ProxyGroupCo
                     singleproxy["dns"] = x.DnsServers;
                 if (x.Mtu > 0)
                     singleproxy["mtu"] = x.Mtu;
+                if (x.RemoteDnsResolve)
+                    singleproxy["remote-dns-resolve"] = true;
                 break;
             case ProxyType::Hysteria:
                 singleproxy["type"] = "hysteria";

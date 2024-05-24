@@ -158,7 +158,7 @@ void wireguardConstruct(Proxy &node, const std::string &group, const std::string
                         const std::string &port, const std::string &selfIp, const std::string &selfIpv6,
                         const std::string &privKey, const std::string &pubKey, const std::string &psk,
                         const string_array &dns, const std::string &mtu, const std::string &keepalive,
-                        const std::string &testUrl, const std::string &clientId, const tribool &udp) {
+                        const std::string &testUrl, const std::string &clientId, const tribool &udp, const tribool &remoteDnsResolve) {
     commonConstruct(node, ProxyType::WireGuard, group, remarks, server, port, udp, tribool(), tribool(), tribool());
     node.SelfIP = selfIp;
     node.SelfIPv6 = selfIpv6;
@@ -170,6 +170,7 @@ void wireguardConstruct(Proxy &node, const std::string &group, const std::string
     node.KeepAlive = to_int(keepalive);
     node.TestUrl = testUrl;
     node.ClientId = clientId;
+    node.RemoteDnsResolve = remoteDnsResolve;
 }
 
 void hysteriaConstruct(Proxy &node, const std::string &group, const std::string &remarks, const std::string &add,
@@ -1092,7 +1093,7 @@ void explodeClash(Node yamlnode, std::vector<Proxy> &nodes) {
         std::string auth, up, down, obfsParam, insecure, alpn;//hysteria
         std::string obfsPassword;//hysteria2
         string_array dns_server;
-        tribool udp, tfo, scv;
+        tribool udp, tfo, scv, remoteDnsResolve;
         Proxy node;
         singleproxy = yamlnode[section][i];
         singleproxy["type"] >>= proxytype;
@@ -1103,6 +1104,7 @@ void explodeClash(Node yamlnode, std::vector<Proxy> &nodes) {
             continue;
         udp = safe_as<std::string>(singleproxy["udp"]);
         scv = safe_as<std::string>(singleproxy["skip-cert-verify"]);
+        remoteDnsResolve = safe_as<std::string>(singleproxy["remote-dns-resolve"]);
         switch (hash_(proxytype)) {
             case "vmess"_hash:
                 singleproxy["uuid"] >>= id;
@@ -1305,7 +1307,7 @@ void explodeClash(Node yamlnode, std::vector<Proxy> &nodes) {
                 singleproxy["ipv6"] >>= ipv6;
 
                 wireguardConstruct(node, group, ps, server, port, ip, ipv6, private_key, public_key, password,
-                                   dns_server, mtu, "0", "", "", udp);
+                                   dns_server, mtu, "0", "", "", udp, remoteDnsResolve);
                 break;
             case "vless"_hash:
                 group = XRAY_DEFAULT_GROUP;
@@ -2105,9 +2107,8 @@ bool explodeSurge(std::string surge, std::vector<Proxy> &nodes) {
                             break;
                     }
                 }
-
                 wireguardConstruct(node, WG_DEFAULT_GROUP, remarks, "", "0", ip, ipv6, private_key, "", "", dns_servers,
-                                   mtu, keepalive, test_url, "", udp);
+                                   mtu, keepalive, test_url, "", udp, false);
                 parsePeers(node, peer);
                 break;
             default:
@@ -2690,7 +2691,7 @@ void explodeSingbox(rapidjson::Value &outbounds, std::vector<Proxy> &nodes) {
                         password = GetMember(singboxNode, "pre_shared_key");
                         dns_server = {"8.8.8.8"};
                         wireguardConstruct(node, group, ps, server, port, ip, ipv6, private_key, public_key, password,
-                                           dns_server, mtu, "0", "", "", udp);
+                                           dns_server, mtu, "0", "", "", udp, false);
                         break;
                     case "socks"_hash:
                         group = SOCKS_DEFAULT_GROUP;
