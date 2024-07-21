@@ -85,6 +85,7 @@ struct Proxy {
     String Host;
     String Path;
     String Edge;
+    String UserAgent;
 
     String QUICSecure;
     String QUICSecret;

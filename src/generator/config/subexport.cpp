@@ -312,6 +312,8 @@ proxyToClash(std::vector<Proxy> &nodes, YAML::Node &yamlnode, const ProxyGroupCo
                                 singleproxy["ws-opts"]["headers"]["Host"] = x.Host;
                             if (!x.Edge.empty())
                                 singleproxy["ws-opts"]["headers"]["Edge"] = x.Edge;
+                            if (!x.UserAgent.empty())
+                                singleproxy["ws-opts"]["headers"]["User-Agent"] = x.UserAgent;
                         } else {
                             singleproxy["ws-path"] = x.Path;
                             if (!x.Host.empty())
