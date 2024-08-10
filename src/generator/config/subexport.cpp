@@ -147,6 +147,17 @@ bool applyMatcher(const std::string &rule, std::string &real_rule, const Proxy &
     return true;
 }
 
+bool isDuplicated(const Proxy &node, std::vector<Proxy> &nodelist) {
+    for (Proxy &x: nodelist) {
+        if (node.Type == x.Type) {
+            if(node.Hostname == x.Hostname && node.Port == x.Port){
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 void processRemark(std::string &remark, const string_array &remarks_list, bool proc_comma = true) {
     // Replace every '=' with '-' in the remark string to avoid parse errors from the clients.
     //     Surge is tested to yield an error when handling '=' in the remark string, 
@@ -221,6 +232,9 @@ proxyToClash(std::vector<Proxy> &nodes, YAML::Node &yamlnode, const ProxyGroupCo
     }
 
     for (Proxy &x: nodes) {
+        if(isDuplicated(x,nodelist)){
+            continue;
+        }
         YAML::Node singleproxy;
 
         std::string type = getProxyTypeName(x.Type);
